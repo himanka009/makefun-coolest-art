@@ -30,38 +30,79 @@ def sky(x, y):
     plume *= math.exp(-abs(radius - 151) / 67)
     rim = math.exp(-((radius - 144) / 3.7) ** 2)
     daybreak = math.exp(-((dx + 122) / 310) ** 2) * horizon
+    # Curving magnetic arches rather than an evenly fuzzy solar halo.
+    distance = max(0, radius - 143)
+    twist = angle + .0028 * distance
+    threads = max(0, math.sin(twist * 31 + 2.4 * math.sin(twist * 7))) ** 12
+    threads *= .35 + .65 * (.5 + .5 * math.sin(angle * 5 + 1.4)) ** 2
+    threads *= math.exp(-distance / 48) * (1 - math.exp(-distance / 5))
+    loops = math.exp(-((radius - 173 - 13 * math.sin(angle * 9)) / 2.2) ** 2)
+    loops *= max(0, math.cos(angle * 3 - .8)) ** 8
+    dust_axis = y - (172 + .29 * x + 22 * math.sin(x / 160))
+    nebula = math.exp(-(dust_axis / 40) ** 2) * .5
+    nebula *= .5 + .5 * math.sin(x * .017 + y * .009)
     if radius < 142:
         eclipse = max(0, 1 - (142 - radius) / 45)
         haze = eclipse * (.5 + .5 * math.cos(angle + 1.8)) ** 3
         return 8 + 45 * haze, 8 + 16 * haze, 20 + 29 * haze
+    # Sea fog separates the remote waterline from the black sky.
+    fog = math.exp(-((y - HORIZON + 3) / 8) ** 2)
+    fog *= .4 + .6 * math.exp(-((x - 383) / 220) ** 2)
     return (
-        14 + 52 * daybreak + 170 * glow * filament + 155 * rim + 81 * plume,
-        11 + 28 * daybreak + 55 * glow * filament + 101 * rim + 38 * plume,
-        34 + 31 * daybreak + 65 * glow * filament + 56 * rim + 18 * plume,
+        11 + 52 * daybreak + 170 * glow * filament + 155 * rim + 81 * plume + 120 * threads + 65 * loops + 12 * nebula + 8 * fog,
+        15 + 28 * daybreak + 70 * glow * filament + 117 * rim + 38 * plume + 74 * threads + 36 * loops + 37 * nebula + 13 * fog,
+        32 + 31 * daybreak + 40 * glow * filament + 59 * rim + 18 * plume + 27 * threads + 16 * loops + 55 * nebula + 17 * fog,
     )
 
 
 def ocean(x, y):
     depth = y - HORIZON
     dx = x - CENTER_X
-    ridge = math.sin(y * .86 + math.sin(x * .022) * 2.8)
-    ridge += .56 * math.sin(y * 1.57 + x * .018)
-    ripples = max(0, ridge - .72)
+    # Logarithmic spacing makes distant waves compress into the horizon.
+    perspective = math.log1p(depth / 19) * 26
+    phase = perspective + 1.6 * math.sin(x / (17 + depth * .15))
+    phase += .6 * math.sin(x * .041 + depth * .065)
+    ridge = math.sin(phase) + .38 * math.sin(phase * 2.17 + x * .019)
+    ripples = max(0, ridge - .65) ** 3
     width = 47 + depth * .38
     shift = 15 * math.sin(y * .143) + 8 * math.sin(y * .61)
     reflection = math.exp(-((dx + shift) / width) ** 2)
     falloff = math.exp(-depth / 240)
     light = ripples * reflection * falloff
     turquoise = ripples * (1 - reflection * .75) * falloff
+    # Interrupted gold and cyan paths suggest the eclipse and lamp on water.
+    glint = max(0, math.sin(phase + .8) - .91) * 9
+    glint *= math.exp(-((dx + shift - 8) / (12 + depth * .16)) ** 2)
+    ring = math.hypot((x - 378) / 1.9, (y - 557) * 2.2)
+    foam = math.exp(-((ring - 34) / 2.1) ** 2)
+    foam *= .55 + .45 * math.sin(x * .39 + y * .3)
     return (
-        8 + 43 * reflection * falloff + 172 * light,
-        14 + 17 * reflection * falloff + 77 * light + 35 * turquoise,
-        31 + 16 * reflection * falloff + 43 * light + 48 * turquoise,
+        7 + 43 * reflection * falloff + 172 * light + 120 * glint + 30 * foam,
+        16 + 17 * reflection * falloff + 77 * light + 53 * turquoise + 77 * glint + 95 * foam,
+        29 + 16 * reflection * falloff + 43 * light + 66 * turquoise + 31 * glint + 100 * foam,
     )
 
 
 def silhouette(x, y):
-    # A split basalt needle and the lamp suspended above it.
+    # A tiny built lighthouse gives the immense eclipse a human scale.
+    if 312 <= y <= 367:
+        dx = x - 390
+        if 312 <= y < 320 and abs(dx) < (y - 311) * 1.5:
+            return 29, 28, 34
+        if 320 <= y <= 333 and abs(dx) <= 8:
+            if abs(dx) >= 6 or y in (320, 333) or abs(dx) < 1:
+                return 37, 31, 29
+            return 245, 169, 74
+        if 334 <= y <= 337 and abs(dx) <= 13:
+            return 68, 56, 44
+        if 338 <= y <= 367 and abs(dx) <= 5 + (y - 338) * .10:
+            face = max(0, 1 - abs(dx + 2) / 10)
+            mortar = 6 if (y + int(dx) // 3) % 8 == 0 else 0
+            window = abs(dx - 1) < 2 and 346 <= y <= 351
+            if window:
+                return 17, 23, 31
+            return 43 + 58 * face - mortar, 40 + 40 * face - mortar, 42 + 24 * face - mortar
+    # Split basalt facets catch the corona along their windward edges.
     if 335 <= y < 555:
         height = (y - 335) / 220
         middle = 391 - 14 * height + 3 * math.sin(height * 11)
@@ -69,10 +110,11 @@ def silhouette(x, y):
         side = (x - middle) / half_width
         if abs(side) < 1:
             seam = abs(side + .25 + .18 * math.sin(y * .08))
-            strata = max(0, math.sin(y * .27 + x * .64)) * 6
-            edge = 19 * max(0, -side) ** 5
+            strata = max(0, math.sin(y * .27 + x * .64)) * 9
+            edge = 38 * max(0, -side) ** 5
             crack = 16 * max(0, 1 - seam * 24)
-            return 8 + edge + strata + crack, 9 + strata + crack / 3, 19 + edge / 2
+            face = max(0, math.sin(side * 17 + .5 * math.sin(y * .04))) ** 4
+            return 8 + edge + strata + crack + 6 * face, 12 + edge * .65 + strata + crack / 3 + 12 * face, 23 + edge / 2 + 17 * face
     if 539 <= y < 576:
         width = 54 * (1 - ((y - 554) / 23) ** 2)
         if abs(x - 378) < width + 4 * math.sin(x * .29):
