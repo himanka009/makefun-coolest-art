@@ -178,7 +178,7 @@ def pixel(x, y, star):
     flare = 270 * light + 108 * beam
     vignette = 1 - .29 * (((x - 384) / 520) ** 2 + ((y - 345) / 550) ** 2)
     grain = 8 * noise(x, y)
-    return bytes(
+    return tuple(
         min(255, max(0, round(value * vignette + grain)))
         for value in (red + flare, green + .69 * flare, blue + .43 * flare)
     )
@@ -189,26 +189,78 @@ def chunk(tag, data):
     return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", checksum)
 
 
-def render():
+def scene_rows():
+    """Yield packed RGB rows without retaining the uncompressed image."""
     field = stars()
-    rows = bytearray()
     for y in range(SIZE):
-        rows.append(1)
-        previous = b"\x00\x00\x00"
+        row = bytearray(SIZE * 3)
         for x in range(SIZE):
-            current = pixel(x, y, field.get((x, y), 0))
-            rows.extend((value - prior) & 255 for value, prior in zip(current, previous))
-            previous = current
-    header = struct.pack(">IIBBBBB", SIZE, SIZE, 8, 2, 0, 0, 0)
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(rows, 9))
-        + chunk(b"IEND", b"")
-    )
+            red, green, blue = pixel(x, y, field.get((x, y), 0))
+            offset = x * 3
+            row[offset] = red
+            row[offset + 1] = green
+            row[offset + 2] = blue
+        yield row
+
+
+def filter_row(row):
+    """Apply PNG Sub prediction using RGB's three-byte pixel stride.
+
+    Horizontal prediction suits the scene's waves and smooth color fields.
+    A Sub/Up residual-cost heuristic was measured to compress this scene worse.
+    """
+    filtered = bytearray(len(row) + 1)
+    filtered[0] = 1
+    for i, value in enumerate(row):
+        left = row[i - 3] if i >= 3 else 0
+        filtered[i + 1] = (value - left) & 255
+    return filtered
+
+
+def write_png(destination, rows, width, height):
+    """Stream RGB8 rows through one zlib stream into bounded IDAT chunks.
+
+    Memory depends on row width and the 64 KiB chunk limit, not image height.
+    The caller owns the binary destination; malformed row sources raise rather
+    than producing a seemingly complete PNG with an incorrect IHDR.
+    """
+    if not 1 <= width <= 1024 or not 1 <= height <= 1024:
+        raise ValueError("PNG dimensions must be between 1 and 1024")
+    destination.write(b"\x89PNG\r\n\x1a\n")
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    destination.write(chunk(b"IHDR", header))
+    compressor = zlib.compressobj(9)
+    pending = bytearray()
+    limit = 65536
+
+    def emit(data):
+        pending.extend(data)
+        while len(pending) >= limit:
+            destination.write(chunk(b"IDAT", pending[:limit]))
+            del pending[:limit]
+
+    count = 0
+    for row in rows:
+        if count >= height:
+            raise ValueError("Too many RGB rows")
+        if len(row) != width * 3:
+            raise ValueError("Incorrect RGB row length")
+        emit(compressor.compress(filter_row(row)))
+        count += 1
+    if count != height:
+        raise ValueError("Too few RGB rows")
+    emit(compressor.flush())
+    if pending:
+        destination.write(chunk(b"IDAT", pending))
+    destination.write(chunk(b"IEND", b""))
+
+
+def render(destination):
+    write_png(destination, scene_rows(), SIZE, SIZE)
 
 
 if __name__ == "__main__":
     output = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
     output.mkdir(parents=True, exist_ok=True)
-    (output / "entry.png").write_bytes(render())
+    with (output / "entry.png").open("wb") as destination:
+        render(destination)
