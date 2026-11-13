@@ -75,11 +75,15 @@ def ocean(x, y):
     glint *= math.exp(-((dx + shift - 8) / (12 + depth * .16)) ** 2)
     ring = math.hypot((x - 378) / 1.9, (y - 557) * 2.2)
     foam = math.exp(-((ring - 34) / 2.1) ** 2)
-    foam *= .55 + .45 * math.sin(x * .39 + y * .3)
+    foam *= max(0, math.sin(x * .39 + y * .3)) ** 2
+    # Short wind-torn crests interrupt the broad swells without filling the sea.
+    chop = max(0, math.sin(depth * 1.13 + 2 * math.sin(x * .031)) - .78)
+    chop *= max(0, math.sin(x * .17 + depth * .19)) ** 4
+    chop *= min(1, depth / 45) * falloff
     return (
-        7 + 43 * reflection * falloff + 172 * light + 120 * glint + 30 * foam,
-        16 + 17 * reflection * falloff + 77 * light + 53 * turquoise + 77 * glint + 95 * foam,
-        29 + 16 * reflection * falloff + 43 * light + 66 * turquoise + 31 * glint + 100 * foam,
+        7 + 43 * reflection * falloff + 172 * light + 120 * glint + 30 * foam + 18 * chop,
+        16 + 17 * reflection * falloff + 77 * light + 53 * turquoise + 77 * glint + 95 * foam + 48 * chop,
+        29 + 16 * reflection * falloff + 43 * light + 66 * turquoise + 31 * glint + 100 * foam + 62 * chop,
     )
 
 
@@ -107,14 +111,26 @@ def silhouette(x, y):
         height = (y - 335) / 220
         middle = 391 - 14 * height + 3 * math.sin(height * 11)
         half_width = 3 + 36 * height ** 2 + 3 * math.sin(height * 28)
+        half_width += 4 * math.exp(-((y - 367) / 15) ** 2)
         side = (x - middle) / half_width
         if abs(side) < 1:
-            seam = abs(side + .25 + .18 * math.sin(y * .08))
-            strata = max(0, math.sin(y * .27 + x * .64)) * 9
-            edge = 38 * max(0, -side) ** 5
-            crack = 16 * max(0, 1 - seam * 24)
-            face = max(0, math.sin(side * 17 + .5 * math.sin(y * .04))) ** 4
-            return 8 + edge + strata + crack + 6 * face, 12 + edge * .65 + strata + crack / 3 + 12 * face, 23 + edge / 2 + 17 * face
+            # Unequal polygonal columns, with nearly vertical seams and offset
+            # cross fractures, keep the needle geological rather than braided.
+            column = (x - 378 + (555 - y) * .045) / 7
+            index = math.floor(column)
+            facet = column - index
+            face = (.5 + .5 * math.sin(index * 7.13)) * (1 - facet * .65)
+            seam = max(0, 1 - facet * 9)
+            joint_spacing = 29 + 17 * (.5 + .5 * math.sin(index * 4.71))
+            joint = (y + index * 13) % joint_spacing
+            ledge = max(0, 1 - abs(joint - 2) / 1.8)
+            edge = 42 * max(0, -side) ** 5
+            shadow = .72 if joint < 1.4 else 1
+            return tuple(value * shadow for value in (
+                10 + edge + 17 * face + 9 * ledge - 7 * seam,
+                15 + edge * .65 + 22 * face + 11 * ledge - 9 * seam,
+                24 + edge * .45 + 27 * face + 13 * ledge - 12 * seam,
+            ))
     if 539 <= y < 576:
         width = 54 * (1 - ((y - 554) / 23) ** 2)
         if abs(x - 378) < width + 4 * math.sin(x * .29):
